@@ -1,0 +1,5 @@
+osmium-geos-factory uses Catch (https://github.com/philsquared/Catch/) for its unit tests.
+
+Only one header file is needed (catch.hpp) which can be downloaded from
+http://builds.catch-lib.net/ and put into the include directory.
+
