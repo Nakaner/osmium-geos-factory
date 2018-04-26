@@ -18,3 +18,15 @@ target_link_libraries(test_geos_factory testlib ${GEOS_LIBRARY})
 add_test(NAME test_geos_factory
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
     COMMAND test_geos_factory)
+
+add_executable(test_geos_factory_projection t/test_geos_factory_projection.cpp)
+target_link_libraries(test_geos_factory_projection testlib ${GEOS_LIBRARY} ${PROJ_LIBRARY})
+add_test(NAME test_geos_factory_projection
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+    COMMAND test_geos_factory_projection)
+
+add_executable(test_geos_factory_mercator t/test_geos_factory_mercator.cpp)
+target_link_libraries(test_geos_factory_mercator testlib ${GEOS_LIBRARY})
+add_test(NAME test_geos_factory_mercator
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+    COMMAND test_geos_factory_mercator)

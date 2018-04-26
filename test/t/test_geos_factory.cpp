@@ -3,8 +3,6 @@
 
 #include "catch.hpp"
 
-#include <osmium/geom/mercator_projection.hpp>
-
 #include "area_helper.hpp"
 #include "wnl_helper.hpp"
 
@@ -15,15 +13,6 @@ TEST_CASE("GEOS geometry factory - create point") {
     REQUIRE(3.2 == point->getX());
     REQUIRE(4.2 == point->getY());
     REQUIRE(4326 == point->getSRID());
-}
-
-TEST_CASE("GEOS geometry factory - create point in web mercator") {
-    osmium_geos_factory::GEOSFactory<osmium::geom::MercatorProjection> factory;
-
-    const std::unique_ptr<geos::geom::Point> point{factory.create_point(osmium::Location{3.2, 4.2})};
-    REQUIRE(Approx(356222.3705384755l) == point->getX());
-    REQUIRE(Approx(467961.143605213l) == point->getY());
-    REQUIRE(3857 == point->getSRID());
 }
 
 TEST_CASE("GEOS geometry factory - create point with externally created GEOS factory") {
