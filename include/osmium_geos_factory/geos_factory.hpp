@@ -8,7 +8,7 @@ This file is part of osmium-geos-factory, an addon to the Osmium library
 
 This file was part of Osmium (http://osmcode.org/libosmium).
 
-Copyright 2013-2017 Jochen Topf <jochen@topf.org> and others (see README).
+Copyright 2013-2021 Jochen Topf <jochen@topf.org> and others (see README).
 
 Boost Software License - Version 1.0 - August 17th, 2003
 
@@ -47,6 +47,15 @@ DEALINGS IN THE SOFTWARE.
 #if defined(GEOS_VERSION_MAJOR) && defined(GEOS_VERSION_MINOR) && (GEOS_VERSION_MAJOR > 3 || (GEOS_VERSION_MAJOR == 3 && GEOS_VERSION_MINOR >= 6))
 #define GEOS_36
 #endif
+#if defined(GEOS_VERSION_MAJOR) && defined(GEOS_VERSION_MINOR) && (GEOS_VERSION_MAJOR > 3 || (GEOS_VERSION_MAJOR == 3 && GEOS_VERSION_MINOR == 6))
+#define GEOS_36_ONLY
+#endif
+#if defined(GEOS_VERSION_MAJOR) && defined(GEOS_VERSION_MINOR) && (GEOS_VERSION_MAJOR > 3 || (GEOS_VERSION_MAJOR == 3 && GEOS_VERSION_MINOR >= 7))
+#define GEOS_37
+#endif
+#if defined(GEOS_VERSION_MAJOR) && defined(GEOS_VERSION_MINOR) && (GEOS_VERSION_MAJOR > 3 || (GEOS_VERSION_MAJOR == 3 && GEOS_VERSION_MINOR >= 8))
+#define GEOS_38
+#endif
 
 #include <algorithm>
 #include <cassert>
@@ -58,8 +67,8 @@ DEALINGS IN THE SOFTWARE.
 #include <vector>
 
 #include <geos/geom/Coordinate.h>
-#include <geos/geom/CoordinateSequence.h>
-#include <geos/geom/CoordinateSequenceFactory.h>
+#include <geos/geom/CoordinateArraySequence.h>
+#include <geos/geom/CoordinateArraySequenceFactory.h>
 #include <geos/geom/GeometryFactory.h>
 #include <geos/geom/LinearRing.h>
 #include <geos/geom/MultiPolygon.h>
@@ -112,8 +121,8 @@ namespace osmium_geos_factory {
 #endif
 
         geos::geom::GeometryFactory* m_geos_factory;
-
-        std::unique_ptr<geos::geom::CoordinateSequence> m_coordinate_sequence;
+        const geos::geom::CoordinateArraySequenceFactory* m_coord_sequence_factory;
+        std::unique_ptr<geos::geom::CoordinateArraySequence> m_coordinate_sequence;
         std::vector<std::unique_ptr<geos::geom::LinearRing>> m_rings;
         std::vector<std::unique_ptr<geos::geom::Polygon>> m_polygons;
 
@@ -129,6 +138,7 @@ namespace osmium_geos_factory {
             m_precision_model(nullptr),
             m_our_geos_factory(nullptr),
             m_geos_factory(&geos_factory) {
+            m_coord_sequence_factory = static_cast<const geos::geom::CoordinateArraySequenceFactory*>(m_geos_factory->getCoordinateSequenceFactory());
         }
 
         /**
@@ -144,6 +154,7 @@ namespace osmium_geos_factory {
 #endif
 
             m_geos_factory(m_our_geos_factory.get()) {
+            m_coord_sequence_factory = static_cast<const geos::geom::CoordinateArraySequenceFactory*>(geos::geom::CoordinateArraySequenceFactory::instance());
         }
 
         explicit GEOSFactoryImpl(int srid) :
@@ -154,6 +165,7 @@ namespace osmium_geos_factory {
             m_our_geos_factory(new geos::geom::GeometryFactory{m_precision_model.get(), srid}),
 #endif
             m_geos_factory(m_our_geos_factory.get()) {
+            m_coord_sequence_factory = static_cast<const geos::geom::CoordinateArraySequenceFactory*>(geos::geom::CoordinateArraySequenceFactory::instance());
         }
 
         /* Point */
@@ -170,7 +182,11 @@ namespace osmium_geos_factory {
 
         void linestring_start() {
             try {
-                m_coordinate_sequence.reset(m_geos_factory->getCoordinateSequenceFactory()->create(static_cast<std::size_t>(0), 2));
+#ifdef GEOS_37
+                m_coordinate_sequence.reset(static_cast<geos::geom::CoordinateArraySequence*>(m_coord_sequence_factory->create(static_cast<std::size_t>(0), 2).release()));
+#else
+                m_coordinate_sequence.reset(static_cast<geos::geom::CoordinateArraySequence*>(m_coord_sequence_factory->create(static_cast<std::size_t>(0), 2)));
+#endif
             } catch (const geos::util::GEOSException& e) {
                 THROW(osmium_geos_factory::geos_geometry_error(e.what()));
             }
@@ -186,7 +202,11 @@ namespace osmium_geos_factory {
 
         linestring_type linestring_finish(std::size_t /* num_points */) {
             try {
+#ifdef GEOS_37
+                return m_geos_factory->createLineString(std::move(m_coordinate_sequence));
+#else
                 return linestring_type{m_geos_factory->createLineString(m_coordinate_sequence.release())};
+#endif
             } catch (const geos::util::GEOSException& e) {
                 THROW(osmium_geos_factory::geos_geometry_error(e.what()));
             }
@@ -205,11 +225,17 @@ namespace osmium_geos_factory {
         void multipolygon_polygon_finish() {
             try {
                 assert(!m_rings.empty());
+#ifdef GEOS_38
+                std::unique_ptr<geos::geom::LinearRing> outer_ring = std::move(m_rings.front());
+                m_rings.erase(m_rings.begin());
+                m_polygons.emplace_back(m_geos_factory->createPolygon(std::move(outer_ring), std::move(m_rings)));
+#else
                 auto inner_rings = new std::vector<geos::geom::Geometry*>;
                 std::transform(std::next(m_rings.begin(), 1), m_rings.end(), std::back_inserter(*inner_rings), [](std::unique_ptr<geos::geom::LinearRing>& r) {
                     return r.release();
                 });
                 m_polygons.emplace_back(m_geos_factory->createPolygon(m_rings[0].release(), inner_rings));
+#endif
                 m_rings.clear();
             } catch (const geos::util::GEOSException& e) {
                 THROW(osmium_geos_factory::geos_geometry_error(e.what()));
@@ -218,7 +244,11 @@ namespace osmium_geos_factory {
 
         void multipolygon_outer_ring_start() {
             try {
-                m_coordinate_sequence.reset(m_geos_factory->getCoordinateSequenceFactory()->create(static_cast<std::size_t>(0), 2));
+#ifdef GEOS_37
+                m_coordinate_sequence.reset(static_cast<geos::geom::CoordinateArraySequence*>(m_coord_sequence_factory->create(static_cast<std::size_t>(0), 2).release()));
+#else
+                m_coordinate_sequence.reset(static_cast<geos::geom::CoordinateArraySequence*>(m_coord_sequence_factory->create(static_cast<std::size_t>(0), 2)));
+#endif
             } catch (const geos::util::GEOSException& e) {
                 THROW(osmium_geos_factory::geos_geometry_error(e.what()));
             }
@@ -234,7 +264,11 @@ namespace osmium_geos_factory {
 
         void multipolygon_inner_ring_start() {
             try {
-                m_coordinate_sequence.reset(m_geos_factory->getCoordinateSequenceFactory()->create(static_cast<std::size_t>(0), 2));
+#ifdef GEOS_37
+                m_coordinate_sequence.reset(static_cast<geos::geom::CoordinateArraySequence*>(m_coord_sequence_factory->create(static_cast<std::size_t>(0), 2).release()));
+#else
+                m_coordinate_sequence.reset(static_cast<geos::geom::CoordinateArraySequence*>(m_coord_sequence_factory->create(static_cast<std::size_t>(0), 2)));
+#endif
             } catch (const geos::util::GEOSException& e) {
                 THROW(osmium_geos_factory::geos_geometry_error(e.what()));
             }
